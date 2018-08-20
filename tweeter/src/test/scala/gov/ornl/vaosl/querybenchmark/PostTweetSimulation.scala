@@ -1,18 +1,30 @@
 package gov.ornl.vaosl.querybenchmark
 
 import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.scalalogging.LazyLogging
 import io.gatling.commons.validation.Validation
 import io.gatling.core.Predef._
+import io.gatling.core.feeder.RecordSeqFeederBuilder
 import io.gatling.core.structure.{ChainBuilder, ScenarioBuilder}
 import io.gatling.http.Predef._
 import io.gatling.http.protocol.HttpProtocolBuilder
 
+import scala.collection.JavaConverters._
 import scala.concurrent.duration._
 
 
-object TweetConf {
+object TweetConf extends LazyLogging {
+
   val conf: Config = ConfigFactory.load().getConfig("tweeter")
+
+  val confMap: Map[String, String] = conf.entrySet().asScala.map(m => m.getKey -> m.getValue.render()).toMap
+  confMap.foreach(println)
+
+  logger.info(confMap.map{ case (k,v) => s"$k -> $v"}.mkString("\n"))
+
   val endpoint: String = conf.getString("endpoint")
+  val duration: FiniteDuration = conf.getInt("duration") minutes
+  val maxUsers: Int = conf.getInt("maxUsers")
 }
 
 
@@ -24,8 +36,8 @@ object PostTweet {
       tweet <- session("word").validate[String]
     } yield Map("tweet[handle]" -> handle, "tweet[content]" -> tweet)
 
-  val nameFeeder  = tsv("names.txt").random
-  val wordFeeder  = tsv("words.txt").random
+  val nameFeeder: RecordSeqFeederBuilder[String]  = tsv("names.txt").random
+  val wordFeeder: RecordSeqFeederBuilder[String]  = tsv("words.txt").random
 
   val post: ChainBuilder =
     exec(
@@ -51,9 +63,8 @@ class PostTweetSimulation extends Simulation {
     .feed(PostTweet.nameFeeder)
     .feed(PostTweet.wordFeeder)
     .exec(PostTweet.post)
-    .pause(7) // Note that Gatling has recorder real time pauses
 
-  setUp(scn.inject(rampUsers(10) over 1.minutes).protocols(httpConf))
+  setUp(scn.inject(rampUsers(maxUsers) over duration).protocols(httpConf))
 
 
 }
